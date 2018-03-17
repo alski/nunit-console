@@ -23,6 +23,7 @@
 
 using System;
 using System.Reflection;
+using NUnit.Common;
 using NUnit.Engine.Extensibility;
 
 namespace NUnit.Engine.Drivers
@@ -52,7 +53,7 @@ namespace NUnit.Engine.Drivers
         {
             Guard.ArgumentValid(IsSupportedTestFramework(reference), "Invalid framework", "reference");
 
-            return new NUnit3FrameworkDriver(domain);
+            return new NUnit3FrameworkDriver(domain, reference);
         }
     }
 }

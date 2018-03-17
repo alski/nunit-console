@@ -31,6 +31,7 @@ using System.Diagnostics;
 using System.Security;
 using System.Security.Policy;
 using System.Security.Principal;
+using NUnit.Common;
 using NUnit.Engine.Internal;
 
 namespace NUnit.Engine.Services
@@ -181,7 +182,7 @@ namespace NUnit.Engine.Services
                 try
                 {
                     // Uncomment to simulate an error in unloading
-                    //throw new Exception("Testing: simulated unload error");
+                    //throw new CannotUnloadAppDomainException("Testing: simulated unload error");
 
                     // Uncomment to simulate a timeout while unloading
                     //while (true) ;

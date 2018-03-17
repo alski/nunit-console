@@ -47,6 +47,7 @@ namespace NUnit.ConsoleRunner
         public static readonly int INVALID_ASSEMBLY = -2;
         //public static readonly int FIXTURE_NOT_FOUND = -3;    //No longer in use
         public static readonly int INVALID_TEST_FIXTURE = -4;
+        public static readonly int UNLOAD_ERROR = -5;
         public static readonly int UNEXPECTED_ERROR = -100;
 
         #endregion
@@ -60,7 +61,6 @@ namespace NUnit.ConsoleRunner
         private IExtensionService _extensionService;
 
         private ExtendedTextWriter _outWriter;
-        private TextWriter _errorWriter = Console.Error;
 
         private string _workDirectory;
 
@@ -195,15 +195,13 @@ namespace NUnit.ConsoleRunner
                             spec.OutputPath), ex);
                 }
             }
-
-            // TODO: Incorporate this in EventCollector?
-            RedirectErrorOutputAsRequested();
-
+            
             var labels = _options.DisplayTestLabels != null
                 ? _options.DisplayTestLabels.ToUpperInvariant()
                 : "ON";
 
             XmlNode result = null;
+            NUnitEngineUnloadException unloadException = null;
             NUnitEngineException engineException = null;
 
             try
@@ -218,13 +216,13 @@ namespace NUnit.ConsoleRunner
                     result = runner.Run(eventHandler, filter);
                 }
             }
+            catch (NUnitEngineUnloadException ex)
+            {
+                unloadException = ex;
+            }
             catch (NUnitEngineException ex)
             {
                 engineException = ex;
-            }
-            finally
-            {
-                RestoreErrorOutput();
             }
 
             var writer = new ColorConsoleWriter(!_options.NoColor);
@@ -238,12 +236,20 @@ namespace NUnit.ConsoleRunner
                 {
                     var outputPath = Path.Combine(_workDirectory, spec.OutputPath);
                     GetResultWriter(spec).WriteResultFile(result, outputPath);
-                    _outWriter.WriteLine("Results ({0}) saved as {1}", spec.Format, spec.OutputPath);
+                    writer.WriteLine("Results ({0}) saved as {1}", spec.Format, spec.OutputPath);
                 }
 
-                // Since we got a result, we display any engine exception as a warning
                 if (engineException != null)
-                    writer.WriteLine(ColorStyle.Warning, Environment.NewLine + ExceptionHelper.BuildMessage(engineException));
+                {
+                    writer.WriteLine(ColorStyle.Error, Environment.NewLine + ExceptionHelper.BuildMessage(engineException));
+                    return ConsoleRunner.UNEXPECTED_ERROR;
+                }
+
+                if (unloadException != null)
+                {
+                    writer.WriteLine(ColorStyle.Warning, Environment.NewLine + ExceptionHelper.BuildMessage(unloadException));
+                    return ConsoleRunner.UNLOAD_ERROR;
+                }
 
                 if (reporter.Summary.UnexpectedError)
                     return ConsoleRunner.UNEXPECTED_ERROR;
@@ -340,16 +346,6 @@ namespace NUnit.ConsoleRunner
             }
         }
 
-        private void RedirectErrorOutputAsRequested()
-        {
-            if (_options.ErrFileSpecified)
-            {
-                var errorStreamWriter = new StreamWriter(Path.Combine(_workDirectory, _options.ErrFile));
-                errorStreamWriter.AutoFlush = true;
-                _errorWriter = errorStreamWriter;
-            }
-        }
-
         private ExtendedTextWriter CreateOutputWriter()
         {
             if (_options.OutFileSpecified)
@@ -361,13 +357,6 @@ namespace NUnit.ConsoleRunner
             }
 
             return _outWriter;
-        }
-
-        private void RestoreErrorOutput()
-        {
-            _errorWriter.Flush();
-            if (_options.ErrFileSpecified)
-                _errorWriter.Close();
         }
 
         private IResultWriter GetResultWriter(OutputSpecification spec)
@@ -458,6 +447,9 @@ namespace NUnit.ConsoleRunner
 
             if (options.TestParameters.Count != 0)
                 AddTestParametersSetting(package, options.TestParameters);
+
+            if (options.ConfigurationFile != null)
+                package.AddSetting(EnginePackageSettings.ConfigurationFile, options.ConfigurationFile);
 
             return package;
         }

@@ -76,7 +76,7 @@ namespace NUnit.ConsoleRunner
 
         #region Summary Report
 
-        public void WriteRunSettingsReport()
+        internal void WriteRunSettingsReport()
         {
             var firstSuite = ResultNode.SelectSingleNode("test-suite");
             if (firstSuite != null)
@@ -88,15 +88,26 @@ namespace NUnit.ConsoleRunner
                     Writer.WriteLine(ColorStyle.SectionHeader, "Run Settings");
 
                     foreach (XmlNode node in settings)
-                    {
-                        string name = node.GetAttribute("name");
-                        string val = node.GetAttribute("value");
-                        string label = string.Format("    {0}: ", name);
-                        Writer.WriteLabelLine(label, val);
-                    }
+                        WriteSettingsNode(node);
 
                     Writer.WriteLine();
                 }
+            }
+        }
+
+        private void WriteSettingsNode(XmlNode node)
+        {
+            var items = node.SelectNodes("item");
+            var name = node.GetAttribute("name");
+            var val = node.GetAttribute("value") ?? string.Empty;
+
+            Writer.WriteLabelLine($"    {name}:", items.Count > 0 ? string.Empty : $" {val}");
+
+            foreach (XmlNode item in items)
+            {
+                var key = item.GetAttribute("key");
+                var value = item.GetAttribute("value");
+                Writer.WriteLine(ColorStyle.Value, $"        {key} -> {value}");
             }
         }
 
@@ -184,15 +195,36 @@ namespace NUnit.ConsoleRunner
                 case "test-suite":
                     if (resultState == "Failed" || resultState == "Warning")
                     {
-                        if (resultNode.GetAttribute("type") == "Theory")
+                        var suiteType = resultNode.GetAttribute("type");
+                        if (suiteType == "Theory")
                         {
+                            // Report failure of the entire theory and then go on
+                            // to list the individual cases that failed
                             new ConsoleTestResult(resultNode, ++ReportIndex).WriteResult(Writer);
                         }
                         else
                         {
+                            // Where did this happen? Default is in the current test.
                             var site = resultNode.GetAttribute("site");
-                            if (site == "SetUp" || site == "TearDown")
+
+                            // Correct a problem in some framework versions, whereby warnings and some failures 
+                            // are promulgated to the containing suite without setting the FailureSite.
+                            if (site == null)
+                            {
+                                if (resultNode.SelectSingleNode("reason/message")?.InnerText == "One or more child tests had warnings" ||
+                                    resultNode.SelectSingleNode("failure/message")?.InnerText == "One or more child tests had errors")
+                                {
+                                    site = "Child";
+                                }
+                                else
+                                    site = "Test";
+                            }
+
+                            // Only report errors in the current test method, setup or teardown
+                            if (site == "SetUp" || site == "TearDown" || site == "Test")
                                 new ConsoleTestResult(resultNode, ++ReportIndex).WriteResult(Writer);
+
+                            // Do not list individual "failed" tests after a one-time setup failure
                             if (site == "SetUp") return;
                         }
                     }
